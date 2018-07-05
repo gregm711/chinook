@@ -1,62 +1,144 @@
-queue()
-    .defer(d3.json, "/data")
-    .await(makeGraphs);
+const url = "/data/" + window.location.pathname.split("/").pop();
+const heightDim = 240;
+const widthDim = 1000;
 
-function makeGraphs(error, recordsJson) {
+function createPieChart(ndx, col) {
+    var colDim = ndx.dimension(function(d) {
+        return d[col];
+    });
+    var numRecords = colDim.group();
+    var colGroup = colDim.group().reduceSum(function(d) {
+        return d[col];
+    });
+    var pieChart = dc.pieChart("#chart-" + col);
 
-	//Clean data
-	var records = recordsJson;
-	var dateFormat = d3.time.format("%Y-%m-%d %H:%M:%S");
+    pieChart
+        .width(widthDim)
+        .height(heightDim)
+        .dimension(colDim)
+        .group(numRecords)
+    return pieChart
 
-	records.forEach(function(d) {
-		d["timestamp"] = dateFormat.parse(d["InvoiceDate"]);
-		d["timestamp"].setMinutes(0);
-		d["timestamp"].setSeconds(0);
-	});
+}
 
-	//Create a Crossfilter instance
-	var ndx = crossfilter(records);
+function showRow(col) {
+    var checkBox = document.getElementById("checkbox-" + col);
+    var row = document.getElementById("row-" + col);
+    if (checkBox.checked == true) {
+        row.style.display = "block";
+    } else {
+        row.style.display = "none";
+    }
+}
 
-	//Define Dimensions
-	var dateDim = ndx.dimension(function(d) { return d["timestamp"]; });
-  var customerDim = ndx.dimension(function(d) { return d["CustomerId"]; });
-	var allDim = ndx.dimension(function(d) {return d;});
+function detChartType(ndx, col) {
+    var chartType = "";
+    var colDim = ndx.dimension(function(d) {
+        return d[col];
+    });
+    var numRecords = colDim.group();
+    var num = numRecords.top(Number.POSITIVE_INFINITY).length
+    if (col.includes("Date")) {
+        chartType = "time"
+    } else if (num < 4) {
+        chartType = "pie";
+    } else {
+        chartType = "bar"
+    }
+    return chartType;
+}
+
+function createBarChart(ndx, col) {
+    var colDim = ndx.dimension(function(d) {
+        return d[col];
+    });
+    var numRecords = colDim.group();
+    var barChart = dc.barChart("#chart-" + col);
+
+    barChart
+        .width(widthDim)
+        .height(heightDim)
+        .x(d3.scale.ordinal().rangeRoundBands([0, widthDim], .1))
+        .xUnits(dc.units.ordinal)
+        .elasticX(true)
+        .brushOn(false)
+        .dimension(colDim)
+        .barPadding(0.1)
+        .outerPadding(0.05)
+        .group(numRecords)
+        .elasticY(true)
+        .yAxis().ticks(4)
 
 
-	//Group Data
-	var numRecordsByDate = dateDim.group();
-  var customerRecords = customerDim.group();
+    return barChart
 
-	//Define values (to be used in charts)
-	var minDate = dateDim.bottom(1)[0]["timestamp"];
-	var maxDate = dateDim.top(1)[0]["timestamp"];
+}
 
-    //Charts
+function createTimeChart(ndx, col) {
+    var colDim = ndx.dimension(function(d) {
+        return d[col];
+    });
+    var numRecords = colDim.group();
+    var minDate = colDim.bottom(1)[0][col];
+    var maxDate = colDim.top(1)[0][col];
+    var timeChart = dc.lineChart("#chart-" + col);
+    var miny = 1;
+    var maxy = 2;
+    timeChart
+        .brushOn(true)
+        .xAxisLabel("Date")
+        .width(widthDim)
+        .height(heightDim)
+        .dimension(colDim)
+        .group(numRecords)
+        .x(d3.time.scale().domain([minDate, maxDate]))
+        .y(d3.scale.linear().domain([miny, maxy]))
+        .renderDataPoints(true)
+        .yAxis().ticks(4)
 
-	var timeChart = dc.barChart("#time-chart");
-
-  // var customerChart = dc.barChart("#customer-chart");
 
 
+    return timeChart
 
-  // customerChart
-  //   .width(650)
-  //   .height(140)
-  //   .dimension(customerDim)
-  //   .group(customerRecords)
-  //   .x(d3.time.scale().domain([minDate, maxDate]))
+}
 
-	timeChart
-		.width(650)
-		.height(140)
-		.margins({top: 10, right: 50, bottom: 20, left: 20})
-		.dimension(dateDim)
-		.group(numRecordsByDate)
 
-		// .x(d3.time.scale().domain([minDate, maxDate]))
-		// .elasticY(true)
-		// .yAxis().ticks(4);
+d3.json(url, function makeGraphs(recordsJson) {
 
-	dc.renderAll();
+    var records = recordsJson;
+    var dateFormat = d3.time.format("%Y-%m-%d %H:%M:%S");
+    var ndx = crossfilter(records);
 
-};
+    // Go through and format dates if possible
+    columns.forEach(function(col) {
+        if (col.includes("Date")) {
+            records.forEach(function(d) {
+                d[col] = dateFormat.parse(d[col]);
+                d[col].setMinutes(0);
+                d[col].setSeconds(0);
+            });
+        }
+    });
+
+    columns.forEach(function(col) {
+
+        var chartType = detChartType(ndx, col)
+
+        switch (chartType) {
+            case "time":
+                var timeChart = createTimeChart(ndx, col)
+                break;
+            case "pie":
+                var pieChart = createPieChart(ndx, col)
+                break;
+            case "bar":
+                var barChart = createBarChart(ndx, col)
+                break;
+            default:
+                break
+
+        }
+    });
+    dc.renderAll();
+
+});

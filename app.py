@@ -3,8 +3,6 @@ from flask import Flask, g, render_template
 import json
 import pandas as pd
 app = Flask(__name__)
-
-TABLES = ['ALBUM', '']
 DATABASE = '/Users/gregmiller/Downloads/Chinook_Sqlite.sqlite'
 
 def get_db():
@@ -19,14 +17,12 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
-
 @app.route("/<table>")
-def index(table):
+def tablePage(table):
     cur = get_db()
     tab = table.upper()
     tablesResult = cur.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
     tableNames = [table[0] for table in tablesResult]
-
     query = "SELECT * FROM " + tab
     df = pd.read_sql_query(query, cur)
     columns = list(df.columns)
@@ -39,8 +35,6 @@ def combineData(table):
     query = "SELECT * FROM " + tab
     df = pd.read_sql_query(query, cur)
     df =df.head(100)
-
-
     return df.to_json(orient='records')
 
 
