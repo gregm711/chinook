@@ -11776,7 +11776,7 @@ dc.heatMap = function (parent, chartGroup) {
             showOutliers = true,
             boldOutlier = false;
 
-        // For each small multiple…
+        // For each small multipleâ€¦
         function box (g) {
             /* jshint -W074 */
             g.each(function (d, i) {

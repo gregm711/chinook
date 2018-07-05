@@ -2,6 +2,17 @@ const url = "/data/" + window.location.pathname.split("/").pop();
 const heightDim = 240;
 const widthDim = 1000;
 
+
+function showRow(col) {
+    var checkBox = document.getElementById("checkbox-" + col);
+    var row = document.getElementById("row-" + col);
+    if (checkBox.checked == true) {
+        row.style.display = "block";
+    } else {
+        row.style.display = "none";
+    }
+}
+
 function createPieChart(ndx, col) {
     var colDim = ndx.dimension(function(d) {
         return d[col];
@@ -17,36 +28,11 @@ function createPieChart(ndx, col) {
         .height(heightDim)
         .dimension(colDim)
         .group(numRecords)
+
     return pieChart
 
 }
 
-function showRow(col) {
-    var checkBox = document.getElementById("checkbox-" + col);
-    var row = document.getElementById("row-" + col);
-    if (checkBox.checked == true) {
-        row.style.display = "block";
-    } else {
-        row.style.display = "none";
-    }
-}
-
-function detChartType(ndx, col) {
-    var chartType = "";
-    var colDim = ndx.dimension(function(d) {
-        return d[col];
-    });
-    var numRecords = colDim.group();
-    var num = numRecords.top(Number.POSITIVE_INFINITY).length
-    if (col.includes("Date")) {
-        chartType = "time"
-    } else if (num < 4) {
-        chartType = "pie";
-    } else {
-        chartType = "bar"
-    }
-    return chartType;
-}
 
 function createBarChart(ndx, col) {
     var colDim = ndx.dimension(function(d) {
@@ -61,7 +47,7 @@ function createBarChart(ndx, col) {
         .x(d3.scale.ordinal().rangeRoundBands([0, widthDim], .1))
         .xUnits(dc.units.ordinal)
         .elasticX(true)
-        .brushOn(false)
+        .brushOn(true)
         .dimension(colDim)
         .barPadding(0.1)
         .outerPadding(0.05)
@@ -81,7 +67,7 @@ function createTimeChart(ndx, col) {
     var numRecords = colDim.group();
     var minDate = colDim.bottom(1)[0][col];
     var maxDate = colDim.top(1)[0][col];
-    var timeChart = dc.lineChart("#chart-" + col);
+    var timeChart = dc.barChart("#chart-" + col);
     var miny = 1;
     var maxy = 2;
     timeChart
@@ -92,14 +78,30 @@ function createTimeChart(ndx, col) {
         .dimension(colDim)
         .group(numRecords)
         .x(d3.time.scale().domain([minDate, maxDate]))
-        .y(d3.scale.linear().domain([miny, maxy]))
-        .renderDataPoints(true)
         .yAxis().ticks(4)
 
 
 
     return timeChart
 
+}
+
+
+function detChartType(ndx, col) {
+    var chartType = "";
+    var colDim = ndx.dimension(function(d) {
+        return d[col];
+    });
+    var numRecords = colDim.group();
+    var num = numRecords.top(Number.POSITIVE_INFINITY).length
+    if (col.includes("Date")) {
+        chartType = "time"
+    } else if (num < 4) {
+        chartType = "pie";
+    } else {
+        chartType = "bar"
+    }
+    return chartType;
 }
 
 
