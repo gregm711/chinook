@@ -67,11 +67,10 @@ function createTimeChart(ndx, col) {
     var numRecords = colDim.group();
     var minDate = colDim.bottom(1)[0][col];
     var maxDate = colDim.top(1)[0][col];
-    var timeChart = dc.barChart("#chart-" + col);
-    var miny = 1;
-    var maxy = 2;
+    var timeChart = dc.lineChart("#chart-" + col);
     timeChart
         .brushOn(true)
+        .renderDataPoints(true)
         .xAxisLabel("Date")
         .width(widthDim)
         .height(heightDim)
@@ -79,6 +78,8 @@ function createTimeChart(ndx, col) {
         .group(numRecords)
         .x(d3.time.scale().domain([minDate, maxDate]))
         .yAxis().ticks(4)
+
+
 
 
 
