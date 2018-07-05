@@ -1,5 +1,5 @@
 /*!
- *  dc 3.0.4
+ *  dc 3.0.0
  *  http://dc-js.github.io/dc.js/
  *  Copyright 2012-2016 Nick Zhu & the dc.js Developers
  *  https://github.com/dc-js/dc.js/blob/master/AUTHORS
@@ -29,7 +29,7 @@
  * such as {@link dc.baseMixin#svg .svg} and {@link dc.coordinateGridMixin#xAxis .xAxis},
  * return values that are themselves chainable d3 objects.
  * @namespace dc
- * @version 3.0.4
+ * @version 3.0.0
  * @example
  * // Example chaining
  * chart.width(300)
@@ -38,7 +38,7 @@
  */
 /*jshint -W079*/
 var dc = {
-    version: '3.0.4',
+    version: '3.0.0',
     constants: {
         CHART_CLASS: 'dc-chart',
         DEBUG_GROUP_CLASS: 'debug',
@@ -841,19 +841,15 @@ dc.utils.safeNumber = function (n) { return dc.utils.isNumber(+n) ? +n : 0;};
  * @returns {Boolean}
  */
 dc.utils.arraysEqual = function (a1, a2) {
-    if (!a1 && !a2) {
-        return true;
-    }
-
     if (!a1 || !a2) {
-        return false;
+        return a1 === a2;
     }
 
     return a1.length === a2.length &&
         // If elements are not integers/strings, we hope that it will match because of toString
         // Test cases cover dates as well.
         a1.every(function (elem, i) {
-            return elem.valueOf() === a2[i].valueOf();
+            return elem === a2[i] || elem.toString() === a2[i].toString();
         });
 };
 
@@ -3140,7 +3136,6 @@ dc.coordinateGridMixin = function (_chart) {
     var _brush = d3.brushX();
     var _gBrush;
     var _brushOn = true;
-    var _parentBrushOn = false;
     var _round;
 
     var _renderHorizontalGridLine = false;
@@ -3415,8 +3410,8 @@ dc.coordinateGridMixin = function (_chart) {
      * chart.xAxis().tickFormat(function(v) {return v + '%';});
      * // customize x axis tick values
      * chart.xAxis().tickValues([0, 100, 200, 300]);
-     * @param {d3.axis} [xAxis=d3.axisBottom()]
-     * @returns {d3.axis|dc.coordinateGridMixin}
+     * @param {d3.axisBottom} [xAxis=d3.axisBottom]
+     * @returns {d3.axisBottom|dc.coordinateGridMixin}
      */
     _chart.xAxis = function (xAxis) {
         if (!arguments.length) {
@@ -4179,17 +4174,19 @@ dc.coordinateGridMixin = function (_chart) {
 
         _chart.redrawBrush(brushSelection, false);
 
-        var rangedFilter = _chart.brushIsEmpty(brushSelection) ? null : dc.filters.RangedFilter(brushSelection[0], brushSelection[1]);
+        if (_chart.brushIsEmpty(brushSelection)) {
+            dc.events.trigger(function () {
+                _chart.filter(null);
+                _chart.redrawGroup();
+            }, dc.constants.EVENT_DELAY);
+        } else {
+            var rangedFilter = dc.filters.RangedFilter(brushSelection[0], brushSelection[1]);
 
-        dc.events.trigger(function () {
-            _chart.applyBrushSelection(rangedFilter);
-        }, dc.constants.EVENT_DELAY);
-    };
-
-    // This can be overridden in a derived chart. For example Composite chart overrides it
-    _chart.applyBrushSelection = function (rangedFilter) {
-        _chart.replaceFilter(rangedFilter);
-        _chart.redrawGroup();
+            dc.events.trigger(function () {
+                _chart.replaceFilter(rangedFilter);
+                _chart.redrawGroup();
+            }, dc.constants.EVENT_DELAY);
+        }
     };
 
     _chart.setBrushExtents = function (doTransition) {
@@ -4397,7 +4394,7 @@ dc.coordinateGridMixin = function (_chart) {
         _chart.redraw();
 
         if (!noRaiseEvents) {
-            if (_rangeChart && !dc.utils.arraysEqual(_chart.filter(), _rangeChart.filter())) {
+            if (_rangeChart && !rangesEqual(_chart.filter(), _rangeChart.filter())) {
                 dc.events.trigger(function () {
                     _rangeChart.replaceFilter(domFilter);
                     _rangeChart.redraw();
@@ -4496,7 +4493,7 @@ dc.coordinateGridMixin = function (_chart) {
     };
 
     _chart.refocused = function () {
-        return !dc.utils.arraysEqual(_chart.x().domain(), _xOriginalDomain);
+        return !rangesEqual(_chart.x().domain(), _xOriginalDomain);
     };
 
     _chart.focusChart = function (c) {
@@ -4504,12 +4501,12 @@ dc.coordinateGridMixin = function (_chart) {
             return _focusChart;
         }
         _focusChart = c;
-        _chart.on('filtered.dcjs-range-chart', function (chart) {
+        _chart.on('filtered', function (chart) {
             if (!chart.filter()) {
                 dc.events.trigger(function () {
                     _focusChart.x().domain(_focusChart.xOriginalDomain(), true);
                 });
-            } else if (!dc.utils.arraysEqual(chart.filter(), _focusChart.filter())) {
+            } else if (!rangesEqual(chart.filter(), _focusChart.filter())) {
                 dc.events.trigger(function () {
                     _focusChart.focus(chart.filter(), true);
                 });
@@ -4517,6 +4514,20 @@ dc.coordinateGridMixin = function (_chart) {
         });
         return _chart;
     };
+
+    function rangesEqual (range1, range2) {
+        if (!range1 && !range2) {
+            return true;
+        } else if (!range1 || !range2) {
+            return false;
+        } else if (range1.length === 0 && range2.length === 0) {
+            return true;
+        } else if (range1[0].valueOf() === range2[0].valueOf() &&
+            range1[1].valueOf() === range2[1].valueOf()) {
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Turn on/off the brush-based range filter. When brushing is on then user can drag the mouse
@@ -4536,24 +4547,6 @@ dc.coordinateGridMixin = function (_chart) {
             return _brushOn;
         }
         _brushOn = brushOn;
-        return _chart;
-    };
-
-    /**
-     * This will be internally used by composite chart onto children. Please go not invoke directly.
-     *
-     * @method parentBrushOn
-     * @memberof dc.coordinateGridMixin
-     * @protected
-     * @instance
-     * @param {Boolean} [brushOn=false]
-     * @returns {Boolean|dc.coordinateGridMixin}
-     */
-    _chart.parentBrushOn = function (brushOn) {
-        if (!arguments.length) {
-            return _parentBrushOn;
-        }
-        _parentBrushOn = brushOn;
         return _chart;
     };
 
@@ -6817,7 +6810,7 @@ dc.barChart = function (parent, chartGroup) {
                 bars.classed(dc.constants.SELECTED_CLASS, false);
                 bars.classed(dc.constants.DESELECTED_CLASS, false);
             }
-        } else if (_chart.brushOn() || _chart.parentBrushOn()) {
+        } else if (_chart.brushOn()) {
             if (!_chart.brushIsEmpty(brushSelection)) {
                 var start = brushSelection[0];
                 var end = brushSelection[1];
@@ -7324,7 +7317,7 @@ dc.lineChart = function (parent, chartGroup) {
     }
 
     function drawDots (chartBody, layers) {
-        if (_chart.xyTipsOn() === 'always' || (!(_chart.brushOn() || _chart.parentBrushOn()) && _chart.xyTipsOn())) {
+        if (_chart.xyTipsOn() === 'always' || (!_chart.brushOn() && _chart.xyTipsOn())) {
             var tooltipListClass = TOOLTIP_G_CLASS + '-list';
             var tooltips = chartBody.select('g.' + tooltipListClass);
 
@@ -8574,8 +8567,7 @@ dc.compositeChart = function (parent, chartGroup) {
             child.svg(_chart.svg());
             child.xUnits(_chart.xUnits());
             child.transitionDuration(_chart.transitionDuration(), _chart.transitionDelay());
-            child.parentBrushOn(_chart.brushOn());
-            child.brushOn(false);
+            child.brushOn(_chart.brushOn());
             child.renderTitle(_chart.renderTitle());
             child.elasticX(_chart.elasticX());
         }
@@ -8583,14 +8575,35 @@ dc.compositeChart = function (parent, chartGroup) {
         return g;
     });
 
-    _chart.on('filtered.dcjs-composite-chart', function (chart) {
-        // Propagate the filters onto the children
-        // Notice that on children the call is .replaceFilter and not .filter
-        //   the reason is that _chart.filter() returns the entire current set of filters not just the last added one
-        for (var i = 0; i < _children.length; ++i) {
-            _children[i].replaceFilter(_chart.filter());
+    _chart._brushing = function () {
+        // Avoids infinite recursion (mutual recursion between range and focus operations)
+        // Source Event will be null when brush.move is called programmatically (see below as well).
+        if (!d3.event.sourceEvent) { return; }
+
+        // Ignore event if recursive event - i.e. not directly generated by user action (like mouse/touch etc.)
+        // In this case we are more worried about this handler causing brush move programmatically which will
+        // cause this handler to be invoked again with a new d3.event (and current event set as sourceEvent)
+        // This check avoids recursive calls
+        if (d3.event.sourceEvent.type && ['start', 'brush', 'end'].indexOf(d3.event.sourceEvent.type) !== -1) {
+            return;
         }
-    });
+
+        var brushSelection = d3.event.selection;
+        if (brushSelection) {
+            brushSelection = brushSelection.map(_chart.x().invert);
+        }
+        brushSelection = _chart.extendBrush(brushSelection);
+
+        _chart.redrawBrush(brushSelection, false);
+
+        var brushIsEmpty = _chart.brushIsEmpty(brushSelection);
+
+        _chart.replaceFilter(brushIsEmpty ? null : brushSelection);
+
+        for (var i = 0; i < _children.length; ++i) {
+            _children[i].replaceFilter(brushIsEmpty ? null : brushSelection);
+        }
+    };
 
     _chart._prepareYAxis = function () {
         var left = (leftYAxisChildren().length !== 0);
@@ -8761,8 +8774,6 @@ dc.compositeChart = function (parent, chartGroup) {
     /**
      * Get or set chart-specific options for all child charts. This is equivalent to calling
      * {@link dc.baseMixin#options .options} on each child chart.
-     *
-     * Note: currently you must call this before `compose` in order for the options to be propagated.
      * @method childOptions
      * @memberof dc.compositeChart
      * @instance
@@ -8781,11 +8792,10 @@ dc.compositeChart = function (parent, chartGroup) {
     };
 
     _chart.fadeDeselectedArea = function (brushSelection) {
-        if (_chart.brushOn()) {
-            for (var i = 0; i < _children.length; ++i) {
-                var child = _children[i];
-                child.fadeDeselectedArea(brushSelection);
-            }
+        for (var i = 0; i < _children.length; ++i) {
+            var child = _children[i];
+            child.brush(_chart.brush());
+            child.fadeDeselectedArea(brushSelection);
         }
     };
 
@@ -8811,11 +8821,6 @@ dc.compositeChart = function (parent, chartGroup) {
 
     /**
      * Combine the given charts into one single composite coordinate grid chart.
-     *
-     * Note: currently due to the way it is implemented, you must call this function at the end of
-     * initialization of the composite chart, in particular after `shareTitle`, `childOptions`,
-     * `width`, `height`, and `margins`, in order for the settings to get propagated to the children
-     * correctly.
      * @method compose
      * @memberof dc.compositeChart
      * @instance
@@ -8889,9 +8894,6 @@ dc.compositeChart = function (parent, chartGroup) {
     /**
      * Get or set title sharing for the chart. If set, the {@link dc.baseMixin#title .title()} value from
      * this chart will be shared with composed children.
-     *
-     * Note: currently you must call this before `compose` or the child will still get the parent's
-     * `title` function!
      * @method shareTitle
      * @memberof dc.compositeChart
      * @instance
@@ -9131,7 +9133,7 @@ dc.seriesChart = function (parent, chartGroup) {
                     }, sub.key)
                     .keyAccessor(_chart.keyAccessor())
                     .valueAccessor(_chart.valueAccessor())
-                    .brushOn(false);
+                    .brushOn(_chart.brushOn());
             });
         // this works around the fact compositeChart doesn't really
         // have a removal interface
@@ -10068,28 +10070,22 @@ dc.rowChart = function (parent, chartGroup) {
     };
 
     /**
-     * Get or sets the x axis for the row chart instance.
-     * See the {@link https://github.com/d3/d3-axis/blob/master/README.md d3.axis}
+     * Get the x axis for the row chart instance.  Note: not settable for row charts.
+     * See the {@link https://github.com/d3/d3-axis/blob/master/README.md#axisBottom d3.axisBottom}
      * documention for more information.
      * @method xAxis
      * @memberof dc.rowChart
      * @instance
+     * @see {@link https://github.com/d3/d3-axis/blob/master/README.md#axisBottom d3.axisBottom}
      * @example
      * // customize x axis tick format
      * chart.xAxis().tickFormat(function (v) {return v + '%';});
      * // customize x axis tick values
      * chart.xAxis().tickValues([0, 100, 200, 300]);
-     * // use a top-oriented axis. Note: position of the axis and grid lines will need to
-     * // be set manually, see https://dc-js.github.io/dc.js/examples/row-top-axis.html
-     * chart.xAxis(d3.axisTop())
-     * @returns {d3.axis}
+     * @returns {d3.axisBottom}
      */
-    _chart.xAxis = function (xAxis) {
-        if (!arguments.length) {
-            return _xAxis;
-        }
-        _xAxis = xAxis;
-        return this;
+    _chart.xAxis = function () {
+        return _xAxis;
     };
 
     /**
@@ -10757,7 +10753,7 @@ dc.scatterPlot = function (parent, chartGroup) {
         symbols.call(renderTitles, _chart.data());
 
         symbols.each(function (d, i) {
-            _filtered[i] = !_chart.filter() || _chart.filter().isFiltered([_chart.keyAccessor()(d), _chart.valueAccessor()(d)]);
+            _filtered[i] = !_chart.filter() || _chart.filter().isFiltered([d.key[0], d.key[1]]);
         });
 
         dc.transition(symbols, _chart.transitionDuration(), _chart.transitionDelay())
@@ -11723,36 +11719,6 @@ dc.heatMap = function (parent, chartGroup) {
 };
 
 // https://github.com/d3/d3-plugins/blob/master/box/box.js
-// * Original source March 22, 2013
-// * Enhancements integrated on May 13, 2018 for dc.js library only
-
-// https://github.com/d3/d3-plugins/blob/master/LICENSE
-// Copyright (c) 2012-2015, Michael Bostock
-// All rights reserved.
-
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// * The name Michael Bostock may not be used to endorse or promote products
-//   derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL MICHAEL BOSTOCK BE LIABLE FOR ANY DIRECT,
-// INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-// BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-// EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 (function () {
 
     // Inspired by http://informationandvisualization.de/blog/box-plot
@@ -11765,29 +11731,16 @@ dc.heatMap = function (parent, chartGroup) {
             value = Number,
             whiskers = boxWhiskers,
             quartiles = boxQuartiles,
-            tickFormat = null,
-
-            // Enhanced attributes
-            renderDataPoints = false,
-            dataRadius = 3,
-            dataOpacity = 0.3,
-            dataWidthPortion = 0.8,
-            renderTitle = false,
-            showOutliers = true,
-            boldOutlier = false;
+            tickFormat = null;
 
         // For each small multipleâ€¦
         function box (g) {
-            /* jshint -W074 */
             g.each(function (d, i) {
                 d = d.map(value).sort(d3.ascending);
                 var g = d3.select(this),
                     n = d.length,
-                    min,
-                    max;
-
-                // Leave if there are no items.
-                if (n === 0) {return;}
+                    min = d[0],
+                    max = d[n - 1];
 
                 // Compute quartiles. Must return exactly 3 elements.
                 var quartileData = d.quartiles = quartiles(d);
@@ -11800,16 +11753,6 @@ dc.heatMap = function (parent, chartGroup) {
                 // We compute the outliers as indices, so that we can join across transitions!
                 var outlierIndices = whiskerIndices ?
                     d3.range(0, whiskerIndices[0]).concat(d3.range(whiskerIndices[1] + 1, n)) : d3.range(n);
-
-                // Determine the maximum value based on if outliers are shown
-                if (showOutliers) {
-                    min = d[0];
-                    max = d[n - 1];
-                } else {
-                    min = d[whiskerIndices[0]];
-                    max = d[whiskerIndices[1]];
-                }
-                var pointIndices = d3.range(whiskerIndices[0], whiskerIndices[1] + 1);
 
                 // Compute the new x-scale.
                 var x1 = d3.scaleLinear()
@@ -11874,8 +11817,7 @@ dc.heatMap = function (parent, chartGroup) {
                     .attr('y', function (d) { return x0(d[2]); })
                     .attr('width', width)
                     .attr('height', function (d) { return x0(d[0]) - x0(d[2]); })
-                    .style('fill-opacity', (renderDataPoints) ? 0.1 : 1)
-                    .transition()
+                  .transition()
                     .duration(duration)
                     .delay(delay)
                     .attr('y', function (d) { return x1(d[2]); })
@@ -11923,7 +11865,7 @@ dc.heatMap = function (parent, chartGroup) {
                     .attr('x2', width)
                     .attr('y2', x0)
                     .style('opacity', 1e-6)
-                    .transition()
+                  .transition()
                     .duration(duration)
                     .delay(delay)
                     .attr('y1', x1)
@@ -11948,90 +11890,34 @@ dc.heatMap = function (parent, chartGroup) {
                     .remove();
 
                 // Update outliers.
-                if (showOutliers) {
-                    var outlierClass = boldOutlier ? 'outlierBold' : 'outlier';
-                    var outlierSize = boldOutlier ? 3 : 5;
-                    var outlierX = boldOutlier ?
-                        function () { return Math.floor(Math.random() *
-                            (width * dataWidthPortion) +
-                            1 + ((width - (width * dataWidthPortion)) / 2)); } :
-                        function () { return width / 2; };
+                var outlier = g.selectAll('circle.outlier')
+                    .data(outlierIndices, Number);
 
-                    var outlier = g.selectAll('circle.' + outlierClass)
-                        .data(outlierIndices, Number);
+                outlier.enter().insert('circle', 'text')
+                    .attr('class', 'outlier')
+                    .attr('r', 5)
+                    .attr('cx', width / 2)
+                    .attr('cy', function (i) { return x0(d[i]); })
+                    .style('opacity', 1e-6)
+                    .transition()
+                    .duration(duration)
+                    .delay(delay)
+                    .attr('cy', function (i) { return x1(d[i]); })
+                    .style('opacity', 1);
 
-                    outlier.enter().insert('circle', 'text')
-                        .attr('class', outlierClass)
-                        .attr('r', outlierSize)
-                        .attr('cx', outlierX)
-                        .attr('cy', function (i) { return x0(d[i]); })
-                        .style('opacity', 1e-6)
-                        .transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cy', function (i) { return x1(d[i]); })
-                        .style('opacity', 0.6);
+                outlier.transition()
+                    .duration(duration)
+                    .delay(delay)
+                    .attr('cx', width / 2)
+                    .attr('cy', function (i) { return x1(d[i]); })
+                    .style('opacity', 1);
 
-                    if (renderTitle) {
-                        outlier.selectAll('title').remove();
-                        outlier.append('title').text(function (i) {return d[i]; });
-                    }
-
-                    outlier.transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cx', outlierX)
-                        .attr('cy', function (i) { return x1(d[i]); })
-                        .style('opacity', 0.6);
-
-                    outlier.exit().transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cy', 0) //function (i) { return x1(d[i]); })
-                        .style('opacity', 1e-6)
-                        .remove();
-                }
-
-                // Update Values
-                if (renderDataPoints) {
-                    var point = g.selectAll('circle.data')
-                        .data(pointIndices);
-
-                    point.enter().insert('circle', 'text')
-                        .attr('class', 'data')
-                        .attr('r', dataRadius)
-                        .attr('cx', function () { return Math.floor(Math.random() *
-                            (width * dataWidthPortion) +
-                            1 + ((width - (width * dataWidthPortion)) / 2)); })
-                        .attr('cy', function (i) { return x0(d[i]); })
-                        .style('opacity', 1e-6)
-                        .transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cy', function (i) { return x1(d[i]); })
-                        .style('opacity', dataOpacity);
-
-                    if (renderTitle) {
-                        point.selectAll('title').remove();
-                        point.append('title').text(function (i) { return d[i]; });
-                    }
-
-                    point.transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cx', function () { return Math.floor(Math.random() *
-                            (width * dataWidthPortion) +
-                            1 + ((width - (width * dataWidthPortion)) / 2)); })
-                        .attr('cy', function (i) { return x1(d[i]); })
-                        .style('opacity', dataOpacity);
-
-                    point.exit().transition()
-                        .duration(duration)
-                        .delay(delay)
-                        .attr('cy', 0)
-                        .style('opacity', 1e-6)
-                        .remove();
-                }
+                outlier.exit().transition()
+                    .duration(duration)
+                    .delay(delay)
+                    .attr('cy', function (i) { return x1(d[i]); })
+                    .style('opacity', 1e-6)
+                    .remove();
 
                 // Compute the tick format.
                 var format = tickFormat || x1.tickFormat(8);
@@ -12094,11 +11980,7 @@ dc.heatMap = function (parent, chartGroup) {
                     .attr('y', x1)
                     .style('opacity', 1e-6)
                     .remove();
-
-                // Remove temporary quartiles element from within data array.
-                delete d.quartiles;
             });
-            /* jshint +W074 */
             d3.timerFlush();
         }
 
@@ -12123,54 +12005,6 @@ dc.heatMap = function (parent, chartGroup) {
                 return tickFormat;
             }
             tickFormat = x;
-            return box;
-        };
-
-        box.showOutliers = function (x) {
-            if (!arguments.length) {
-                return showOutliers;
-            }
-            showOutliers = x;
-            return box;
-        };
-
-        box.boldOutlier = function (x) {
-            if (!arguments.length) {
-                return boldOutlier;
-            }
-            boldOutlier = x;
-            return box;
-        };
-
-        box.renderDataPoints = function (x) {
-            if (!arguments.length) {
-                return renderDataPoints;
-            }
-            renderDataPoints = x;
-            return box;
-        };
-
-        box.renderTitle = function (x) {
-            if (!arguments.length) {
-                return renderTitle;
-            }
-            renderTitle = x;
-            return box;
-        };
-
-        box.dataOpacity = function (x) {
-            if (!arguments.length) {
-                return dataOpacity;
-            }
-            dataOpacity = x;
-            return box;
-        };
-
-        box.dataWidthPortion = function (x) {
-            if (!arguments.length) {
-                return dataWidthPortion;
-            }
-            dataWidthPortion = x;
             return box;
         };
 
@@ -12232,7 +12066,6 @@ dc.heatMap = function (parent, chartGroup) {
 })();
 
 
-
 /**
  * A box plot is a chart that depicts numerical data via their quartile ranges.
  *
@@ -12277,15 +12110,6 @@ dc.boxPlot = function (parent, chartGroup) {
 
     var _box = d3.box();
     var _tickFormat = null;
-    var _renderDataPoints = false;
-    var _dataOpacity = 0.3;
-    var _dataWidthPortion = 0.8;
-    var _showOutliers = true;
-    var _boldOutlier = false;
-
-    // Used in yAxisMin and yAxisMax to add padding in pixel coordinates
-    // so the min and max data points/whiskers are within the chart
-    var _yRangePadding = 8;
 
     var _boxWidth = function (innerChartWidth, xUnits) {
         if (_chart.isOrdinal()) {
@@ -12294,6 +12118,9 @@ dc.boxPlot = function (parent, chartGroup) {
             return innerChartWidth / (1 + _chart.boxPadding()) / xUnits;
         }
     };
+
+    // default padding to handle min/max whisker text
+    _chart.yAxisPadding(12);
 
     // default to ordinal
     _chart.x(d3.scaleBand());
@@ -12382,13 +12209,7 @@ dc.boxPlot = function (parent, chartGroup) {
             .value(_chart.valueAccessor())
             .domain(_chart.y().domain())
             .duration(_chart.transitionDuration())
-            .tickFormat(_tickFormat)
-            .renderDataPoints(_renderDataPoints)
-            .dataOpacity(_dataOpacity)
-            .dataWidthPortion(_dataWidthPortion)
-            .renderTitle(_chart.renderTitle())
-            .showOutliers(_showOutliers)
-            .boldOutlier(_boldOutlier);
+            .tickFormat(_tickFormat);
 
         var boxesG = _chart.chartBodyG().selectAll('g.box').data(_chart.data(), _chart.keyAccessor());
 
@@ -12410,6 +12231,7 @@ dc.boxPlot = function (parent, chartGroup) {
                 _chart.filter(_chart.keyAccessor()(d));
                 _chart.redrawGroup();
             });
+
         return boxesGEnter.merge(boxesG);
     }
 
@@ -12417,31 +12239,13 @@ dc.boxPlot = function (parent, chartGroup) {
         dc.transition(boxesG, _chart.transitionDuration(), _chart.transitionDelay())
             .attr('transform', boxTransform)
             .call(_box)
-            .each(function (d) {
-                var color = _chart.getColor(d, 0);
-                d3.select(this).select('rect.box').attr('fill', color);
-                d3.select(this).selectAll('circle.data').attr('fill', color);
+            .each(function () {
+                d3.select(this).select('rect.box').attr('fill', _chart.getColor);
             });
     }
 
     function removeBoxes (boxesG) {
         boxesG.exit().remove().call(_box);
-    }
-
-    function minDataValue () {
-        return d3.min(_chart.data(), function (e) {
-            return d3.min(_chart.valueAccessor()(e));
-        });
-    }
-
-    function maxDataValue () {
-        return d3.max(_chart.data(), function (e) {
-            return d3.max(_chart.valueAccessor()(e));
-        });
-    }
-
-    function yAxisRangeRatio () {
-        return ((maxDataValue() - minDataValue()) / _chart.effectiveHeight());
     }
 
     _chart.fadeDeselectedArea = function (brushSelection) {
@@ -12455,7 +12259,7 @@ dc.boxPlot = function (parent, chartGroup) {
                     }
                 });
             } else {
-                if (!(_chart.brushOn() || _chart.parentBrushOn())) {
+                if (!_chart.brushOn()) {
                     return;
                 }
                 var start = brushSelection[0];
@@ -12482,18 +12286,22 @@ dc.boxPlot = function (parent, chartGroup) {
     };
 
     _chart.yAxisMin = function () {
-        var padding = _yRangePadding * yAxisRangeRatio();
-        return dc.utils.subtract(minDataValue() - padding, _chart.yAxisPadding());
+        var min = d3.min(_chart.data(), function (e) {
+            return d3.min(_chart.valueAccessor()(e));
+        });
+        return dc.utils.subtract(min, _chart.yAxisPadding());
     };
 
     _chart.yAxisMax = function () {
-        var padding = _yRangePadding * yAxisRangeRatio();
-        return dc.utils.add(maxDataValue() + padding, _chart.yAxisPadding());
+        var max = d3.max(_chart.data(), function (e) {
+            return d3.max(_chart.valueAccessor()(e));
+        });
+        return dc.utils.add(max, _chart.yAxisPadding());
     };
 
     /**
-     * Get or set the numerical format of the boxplot median, whiskers and quartile labels. Defaults
-     * to integer formatting.
+     * Set the numerical format of the boxplot median, whiskers and quartile labels. Defaults to
+     * integer formatting.
      * @example
      * // format ticks to 2 decimal places
      * chart.tickFormat(d3.format('.2f'));
@@ -12511,124 +12319,8 @@ dc.boxPlot = function (parent, chartGroup) {
         return _chart;
     };
 
-    /**
-     * Get or set the amount of padding to add, in pixel coordinates, to the top and
-     * bottom of the chart to accommodate box/whisker labels.
-     * @example
-     * // allow more space for a bigger whisker font
-     * chart.yRangePadding(12);
-     * @method yRangePadding
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Function} [yRangePadding = 8]
-     * @returns {Number|Function|dc.boxPlot}
-     */
-    _chart.yRangePadding = function (yRangePadding) {
-        if (!arguments.length) {
-            return _yRangePadding;
-        }
-        _yRangePadding = yRangePadding;
-        return _chart;
-    };
-
-    /**
-     * Get or set whether individual data points will be rendered.
-     * @example
-     * // Enable rendering of individual data points
-     * chart.renderDataPoints(true);
-     * @method renderDataPoints
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Boolean} [show=false]
-     * @returns {Boolean|dc.boxPlot}
-     */
-    _chart.renderDataPoints = function (show) {
-        if (!arguments.length) {
-            return _renderDataPoints;
-        }
-        _renderDataPoints = show;
-        return _chart;
-    };
-
-    /**
-     * Get or set the opacity when rendering data.
-     * @example
-     * // If individual data points are rendered increase the opacity.
-     * chart.dataOpacity(0.7);
-     * @method dataOpacity
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Number} [opacity=0.3]
-     * @returns {Number|dc.boxPlot}
-     */
-    _chart.dataOpacity = function (opacity) {
-        if (!arguments.length) {
-            return _dataOpacity;
-        }
-        _dataOpacity = opacity;
-        return _chart;
-    };
-
-    /**
-     * Get or set the portion of the width of the box to show data points.
-     * @example
-     * // If individual data points are rendered increase the data box.
-     * chart.dataWidthPortion(0.9);
-     * @method dataWidthPortion
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Number} [percentage=0.8]
-     * @returns {Number|dc.boxPlot}
-     */
-    _chart.dataWidthPortion = function (percentage) {
-        if (!arguments.length) {
-            return _dataWidthPortion;
-        }
-        _dataWidthPortion = percentage;
-        return _chart;
-    };
-
-    /**
-     * Get or set whether outliers will be rendered.
-     * @example
-     * // Disable rendering of outliers
-     * chart.showOutliers(false);
-     * @method showOutliers
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Boolean} [show=true]
-     * @returns {Boolean|dc.boxPlot}
-     */
-    _chart.showOutliers = function (show) {
-        if (!arguments.length) {
-            return _showOutliers;
-        }
-        _showOutliers = show;
-        return _chart;
-    };
-
-    /**
-     * Get or set whether outliers will be drawn bold.
-     * @example
-     * // If outliers are rendered display as bold
-     * chart.boldOutlier(true);
-     * @method boldOutlier
-     * @memberof dc.boxPlot
-     * @instance
-     * @param {Boolean} [show=false]
-     * @returns {Boolean|dc.boxPlot}
-     */
-    _chart.boldOutlier = function (show) {
-        if (!arguments.length) {
-            return _boldOutlier;
-        }
-        _boldOutlier = show;
-        return _chart;
-    };
-
     return _chart.anchor(parent, chartGroup);
 };
-
 
 /**
  * The select menu is a simple widget designed to filter a dimension by selecting an option from
