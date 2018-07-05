@@ -26,7 +26,7 @@ def index(table):
     tab = table.upper()
     tablesResult = cur.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
     tableNames = [table[0] for table in tablesResult]
-    
+
     query = "SELECT * FROM " + tab
     df = pd.read_sql_query(query, cur)
     columns = list(df.columns)
@@ -38,7 +38,7 @@ def combineData(table):
     tab = table.upper()
     query = "SELECT * FROM " + tab
     df = pd.read_sql_query(query, cur)
-    df = df.head(50)
+    df =df.head(100)
 
 
     return df.to_json(orient='records')

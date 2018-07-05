@@ -9,10 +9,13 @@
   <!-- Demo Dependencies -->
   <script src="./static/lib/js/underscore-min.js" type="text/javascript"></script>
   <script src="./static/lib/js/crossfilter.js" type="text/javascript"></script>
-  <script src="https://d3js.org/d3.v5.min.js"></script>
+
+  <script src="https://d3js.org/d3.v5.js"></script>
+  <!-- <script src="https://d3js.org/d3.v5.min.js"></script> -->
+  <script src="http://unpkg.com/dc@3/dc.js" type="text/javascript"></script>
   <!-- <script src="https://d3js.org/d3-queue.v3.min.js"></script> -->
   <script src="./static/lib/js/queue.js" type="text/javascript"></script>
-  <script src="./static/lib/js/dc.min.js" type="text/javascript"></script>
+
   <script src="./static/lib/js/keen.min.js" type="text/javascript"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js" type="text/javascript"></script>
   <script src="./static/lib/js/bootstrap.min.js" type="text/javascript"></script>
@@ -41,7 +44,6 @@
   </button>
   <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
     <div class="navbar-nav">
-      <a class="nav-item nav-link active" href="#">Home <span class="sr-only">(current)</span></a>
         {% for table in tables %}
       <a class="nav-item nav-link" href="/{{table}}">{{table}}</a>
       {% endfor %}
@@ -100,24 +102,66 @@
       }
 </script>
     <script>
-
+    const url = "/data/" + window.location.pathname.split("/").pop();
     const heightDim = 140;
-    const widthDim = 650;
+    const widthDim = 800;
 
     function createPieChart(ndx, col){
       var colDim = ndx.dimension(function(d) { return d[col]; });
       var numRecords = colDim.group();
-      var colGroup = colDim.group().reduceSum(function(d) {return d['Total'];});
-
+      var colGroup = colDim.group().reduceSum(function(d) {return Math.floor(d[col]);});
       var pieChart = dc.pieChart("#chart-"+col);
-
       pieChart
         .width(widthDim)
         .height(heightDim)
         .dimension(colDim)
         .group(colGroup)
-
       return pieChart
+
+    }
+
+    function detChartType(ndx, col){
+      var chartType = "";
+
+      var colDim = ndx.dimension(function(d) { return d[col]; });
+      var numRecords = colDim.group();
+      var num = numRecords.top(Number.POSITIVE_INFINITY).length
+      if (col.includes("Date")) {
+          chartType = "time"
+      }
+      else if (num < 4){
+        chartType = "pie";
+      }
+      else{
+          chartType = "bar"
+      }
+      return chartType;
+
+
+    }
+
+    function createBarChart(ndx, col){
+      var colDim = ndx.dimension(function(d) { return d[col]; });
+      var numRecords = colDim.group();
+      var barChart = dc.barChart("#chart-"+col);
+
+      barChart
+        .width(widthDim)
+        .height(heightDim)
+        .x(d3.scale.ordinal().rangeRoundBands([0, widthDim], .1))
+        .xUnits(dc.units.ordinal)
+        .elasticX(true)
+        .brushOn(false)
+        .dimension(colDim)
+        .barPadding(0.1)
+        .outerPadding(0.05)
+        .group(numRecords)
+        .elasticY(true)
+        .yAxis().ticks(4)
+
+
+
+      return barChart
 
     }
 
@@ -127,20 +171,21 @@
       var minDate = colDim.bottom(1)[0][col];
       var maxDate = colDim.top(1)[0][col];
       var timeChart = dc.barChart("#chart-"+col);
-
       timeChart
+        .brushOn(true)
+        .xAxisLabel("Date")
         .width(widthDim)
         .height(heightDim)
-        .margins({top: 10, right: 50, bottom: 20, left: 20})
         .dimension(colDim)
         .group(numRecords)
         .x(d3.time.scale().domain([minDate, maxDate]))
         .elasticY(true)
-        .yAxis().ticks(2);
+        .yAxis().ticks(2)
+
       return timeChart
 
     }
-  var url = "http://127.0.0.1:5000/data/" + window.location.pathname.split("/").pop();
+
 
   d3.json(url,function makeGraphs(recordsJson) {
       var columns = JSON.parse('{{ columns|tojson }}');
@@ -160,14 +205,24 @@
       });
 
       columns.forEach(function(col){
-        if (col.includes("Date")) {
-        	var timeChart = createTimeChart(ndx,col)
-        } else{
-          var pieChart = createPieChart(ndx, col)
+
+        var chartType = detChartType(ndx, col)
+
+        switch (chartType) {
+          case "time":
+            var timeChart = createTimeChart(ndx,col)
+            break;
+          case "pie":
+            var pieChart = createPieChart(ndx,col)
+            break;
+          case "bar":
+            var barChart = createBarChart(ndx,col)
+            break;
+          default:
+            break
+
         }
-
       });
-
     	dc.renderAll();
 
     });
